@@ -47,6 +47,54 @@ fn with_fake_opener(command: &mut Command, directory: &Path, exit_code: u8) {
 }
 
 #[test]
+fn plain_rcm_creates_and_opens_the_missing_default_configuration() {
+	let directory = tempdir().unwrap();
+	let home = directory.path().join("home");
+	let path = if cfg!(target_os = "macos") {
+		home.join("Library/Application Support/rcm/config.toml")
+	} else {
+		home.join(".config/rcm/config.toml")
+	};
+	let mut command = Command::new(env!("CARGO_BIN_EXE_rcm"));
+	command
+		.env_remove("RCM_CONFIG")
+		.env("HOME", &home)
+		.env("XDG_CONFIG_HOME", home.join(".config"));
+	with_fake_opener(&mut command, directory.path(), 0);
+	assert!(!path.parent().unwrap().exists());
+	let output = command.output().unwrap();
+	assert!(
+		output.status.success(),
+		"{}",
+		String::from_utf8_lossy(&output.stderr)
+	);
+	assert!(path.parent().unwrap().is_dir());
+	assert_eq!(fs::read_to_string(&path).unwrap(), DEFAULT_CONFIG);
+	assert_eq!(
+		fs::read_to_string(directory.path().join("opened")).unwrap(),
+		path.display().to_string()
+	);
+	assert!(
+		String::from_utf8(output.stdout)
+			.unwrap()
+			.contains("Created configuration")
+	);
+	assert!(output.stderr.is_empty());
+	let subsequent = command.output().unwrap();
+	assert!(subsequent.status.success());
+	assert!(
+		String::from_utf8(subsequent.stdout)
+			.unwrap()
+			.contains("hello\tRun the sample command set")
+	);
+	assert_eq!(fs::read_to_string(&path).unwrap(), DEFAULT_CONFIG);
+	assert_eq!(
+		fs::read_to_string(directory.path().join("opened")).unwrap(),
+		path.display().to_string()
+	);
+}
+
+#[test]
 fn first_run_creates_and_opens_the_configuration_without_running_commands() {
 	let directory = tempdir().unwrap();
 	let path = directory.path().join("Application Support/rcm/config.toml");
