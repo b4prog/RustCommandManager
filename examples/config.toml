@@ -1,0 +1,21 @@
+# Rust Command Manager configuration.
+# Add a [commands.NAME] table for each command set, then run: rcm run NAME
+# Each step starts a separate shell, so put related shell state in one step.
+
+[settings]
+shell = "/bin/sh"
+stop_on_error = true
+# working_dir = "/absolute/path/to/your/project"
+
+[commands.hello]
+description = "Run the sample command set"
+steps = [
+  'printf "Hello from rcm!\n"',
+  'printf "Edit this command set or add your own with rcm config.\n"',
+]
+
+# A command set can override the global working directory:
+# [commands.project]
+# description = "Run commands in a project directory"
+# working_dir = "/absolute/path/to/your/project"
+# steps = ['pwd', 'ls']
