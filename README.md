@@ -132,6 +132,21 @@ AGENTS.md                Repository instructions for coding agents
 Makefile                 Development, validation, and installation targets
 ```
 
+## CI and pull request reviews
+
+[GitHub Actions](.github/workflows/ci.yml) runs formatting, Clippy, tests, and a
+release build on macOS and Linux using stable Rust. It runs on pushes to `main`,
+when pull requests are opened, updated, reopened, or marked ready for review,
+and through manual workflow dispatch. Cargo dependencies and build artifacts
+are cached separately for each operating system, architecture, and Rust version.
+
+[CodeRabbit configuration](.coderabbit.yaml) enables automatic reviews through
+the installed CodeRabbit GitHub app. Draft pull requests are skipped; reviews
+start when a pull request is ready for review, including when a draft becomes
+ready. Updates to ready pull requests receive incremental reviews, with no
+automatic pause after a fixed number of reviewed commits. All target branches
+are included. See the [automatic review controls](https://docs.coderabbit.ai/configuration/auto-review).
+
 ## License
 
 [MIT](LICENSE).
