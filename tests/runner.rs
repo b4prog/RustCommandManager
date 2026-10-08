@@ -9,6 +9,7 @@ use tempfile::tempdir;
 
 fn config_for(directory: &Path, steps: &[&str]) -> Config {
 	let mut config = Config::parse(DEFAULT_CONFIG).unwrap();
+	config.settings.shell = "/bin/sh".to_owned();
 	config.settings.working_dir = Some(directory.to_path_buf());
 	config.commands.get_mut("hello").unwrap().steps =
 		steps.iter().map(|step| (*step).to_owned()).collect();

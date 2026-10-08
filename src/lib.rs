@@ -5,3 +5,6 @@ pub mod cli;
 pub mod config;
 pub mod editor;
 pub mod runner;
+#[cfg(unix)]
+mod terminal;
+pub mod viewport;

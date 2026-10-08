@@ -7,15 +7,24 @@ use tempfile::tempdir;
 #[test]
 fn shipped_template_has_a_runnable_sample() {
 	let config = Config::parse(DEFAULT_CONFIG).unwrap();
-	assert_eq!(config.settings.shell, "/bin/sh");
+	assert!(!config.settings.shell.trim().is_empty());
 	assert!(config.settings.stop_on_error);
+	assert_eq!(config.settings.scroll_lines, 5);
 	assert_eq!(config.commands["hello"].steps.len(), 2);
+	assert_eq!(
+		config.commands["brew-update"].steps,
+		[
+			"brew update",
+			"brew upgrade --greedy --no-ask",
+			"brew cleanup -s"
+		]
+	);
 }
 
 #[test]
 fn omitted_settings_use_defaults() {
 	let config = Config::parse("[commands.sample]\nsteps = ['echo sample']").unwrap();
-	assert_eq!(config.settings.shell, "/bin/sh");
+	assert!(!config.settings.shell.trim().is_empty());
 	assert!(config.settings.stop_on_error);
 	assert!(config.settings.working_dir.is_none());
 	assert!(config.commands["sample"].description.is_empty());
@@ -47,6 +56,10 @@ fn invalid_configuration_is_rejected_before_execution() {
 		("[broken", "invalid TOML"),
 		("unknown = true", "unknown field"),
 		("[settings]\nstop_on_eror = false", "unknown field"),
+		(
+			"[settings]\nscroll_lines = 0",
+			"settings.scroll_lines must be greater than zero",
+		),
 		(
 			"[settings]\nshell = '  '",
 			"settings.shell must not be empty",
@@ -89,7 +102,15 @@ fn initialization_creates_nested_directories_and_the_template() {
 	let path = directory.path().join("Application Support/rcm/config.toml");
 	assert!(initialize_config(&path).unwrap());
 	assert_eq!(fs::read_to_string(&path).unwrap(), DEFAULT_CONFIG);
-	assert!(Config::load(&path).is_ok());
+	let config = Config::load(&path).unwrap();
+	assert_eq!(
+		config.commands["brew-update"].steps,
+		[
+			"brew update",
+			"brew upgrade --greedy --no-ask",
+			"brew cleanup -s"
+		]
+	);
 }
 
 #[test]

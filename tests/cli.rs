@@ -10,7 +10,11 @@ use tempfile::{TempDir, tempdir};
 
 fn cli(path: &Path) -> Command {
 	let mut command = Command::new(env!("CARGO_BIN_EXE_rcm"));
-	command.env_remove("RCM_CONFIG").arg("--config").arg(path);
+	command
+		.env_remove("RCM_CONFIG")
+		.env("SHELL", "/bin/sh")
+		.arg("--config")
+		.arg(path);
 	command
 }
 
@@ -151,6 +155,127 @@ fn run_executes_a_named_set_and_inherits_output() {
 	let output = cli(&path).args(["run", "sample"]).output().unwrap();
 	assert!(output.status.success());
 	assert_eq!(String::from_utf8(output.stdout).unwrap(), "firstsecond");
+}
+
+#[test]
+fn omitted_shell_uses_the_inherited_shell_executable() {
+	let (directory, path) = fixture("[commands.sample]\nsteps = ['printf executed']");
+	let shell = directory.path().join("custom shell");
+	fs::write(
+		&shell,
+		"#!/bin/sh\nprintf 'inherited-shell\\n'\nexec /bin/sh \"$@\"\n",
+	)
+	.unwrap();
+	fs::set_permissions(&shell, fs::Permissions::from_mode(0o755)).unwrap();
+	let output = cli(&path)
+		.env("SHELL", &shell)
+		.args(["run", "sample"])
+		.output()
+		.unwrap();
+	assert!(
+		output.status.success(),
+		"{}",
+		String::from_utf8_lossy(&output.stderr)
+	);
+	assert_eq!(output.stdout, b"inherited-shell\nexecuted");
+}
+
+#[test]
+fn missing_or_empty_shell_environment_falls_back_to_bin_sh() {
+	let (_directory, path) = fixture("[commands.sample]\nsteps = ['printf \"%s\" \"$0\"']");
+	for shell in [None, Some(""), Some(" \t ")] {
+		let mut command = cli(&path);
+		command.env_remove("SHELL");
+		if let Some(shell) = shell {
+			command.env("SHELL", shell);
+		}
+		let output = command.args(["run", "sample"]).output().unwrap();
+		assert!(
+			output.status.success(),
+			"{}",
+			String::from_utf8_lossy(&output.stderr)
+		);
+		assert_eq!(output.stdout, b"/bin/sh");
+	}
+}
+
+#[test]
+fn explicit_shell_configuration_takes_precedence_over_the_environment() {
+	let (_directory, path) =
+		fixture("[settings]\nshell = '/bin/sh'\n[commands.sample]\nsteps = ['printf \"%s\" \"$0\"']");
+	let output = cli(&path)
+		.env("SHELL", "/missing/inherited-shell")
+		.args(["run", "sample"])
+		.output()
+		.unwrap();
+	assert!(output.status.success());
+	assert_eq!(output.stdout, b"/bin/sh");
+}
+
+fn fake_brew(directory: &Path) {
+	let executable = directory.join("brew");
+	fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$RCM_TEST_BREW_LOG\"\n[ \"${RCM_TEST_BREW_FAIL-}\" != \"$1\" ] || exit 23\n").unwrap();
+	fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn brew_cli(directory: &Path, path: &Path) -> Command {
+	fake_brew(directory);
+	let mut command = cli(path);
+	command
+		.env("PATH", format!("{}:/usr/bin:/bin", directory.display()))
+		.env("RCM_TEST_BREW_LOG", directory.join("brew-calls"))
+		.env_remove("RCM_TEST_BREW_FAIL")
+		.args(["run", "brew-update"]);
+	command
+}
+
+#[test]
+fn shipped_brew_update_runs_refresh_upgrade_and_cleanup_in_order() {
+	let (directory, path) = fixture(DEFAULT_CONFIG);
+	let output = brew_cli(directory.path(), &path).output().unwrap();
+	assert!(
+		output.status.success(),
+		"{}",
+		String::from_utf8_lossy(&output.stderr)
+	);
+	assert_eq!(
+		fs::read_to_string(directory.path().join("brew-calls")).unwrap(),
+		"update\nupgrade --greedy --no-ask\ncleanup -s\n"
+	);
+}
+
+#[test]
+fn shipped_brew_update_stops_before_cleanup_when_upgrade_fails() {
+	let (directory, path) = fixture(DEFAULT_CONFIG);
+	let output = brew_cli(directory.path(), &path)
+		.env("RCM_TEST_BREW_FAIL", "upgrade")
+		.output()
+		.unwrap();
+	assert_eq!(output.status.code(), Some(23));
+	assert_eq!(
+		fs::read_to_string(directory.path().join("brew-calls")).unwrap(),
+		"update\nupgrade --greedy --no-ask\n"
+	);
+}
+
+#[test]
+fn verbose_mode_prints_the_description_and_preserves_colors_when_redirected() {
+	let (_directory, path) = fixture(
+		r#"[commands.sample]
+description = 'Describe the sample command'
+steps = ['printf "\033[32mcolored\033[0m"']"#,
+	);
+	let output = cli(&path)
+		.args(["run", "sample", "--verbose"])
+		.output()
+		.unwrap();
+	assert!(output.status.success());
+	assert_eq!(output.stdout, b"\x1b[32mcolored\x1b[0m");
+	assert!(
+		String::from_utf8(output.stderr)
+			.unwrap()
+			.contains("Describe the sample command")
+	);
 }
 
 #[test]

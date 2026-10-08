@@ -25,6 +25,7 @@ pub struct Config {
 pub struct Settings {
 	pub shell: String,
 	pub stop_on_error: bool,
+	pub scroll_lines: u16,
 	pub working_dir: Option<PathBuf>,
 }
 
@@ -41,11 +42,19 @@ pub struct CommandSet {
 impl Default for Settings {
 	fn default() -> Self {
 		Self {
-			shell: "/bin/sh".to_owned(),
+			shell: default_shell(),
 			stop_on_error: true,
+			scroll_lines: 5,
 			working_dir: None,
 		}
 	}
+}
+
+fn default_shell() -> String {
+	std::env::var("SHELL")
+		.ok()
+		.filter(|shell| !shell.trim().is_empty())
+		.unwrap_or_else(|| "/bin/sh".to_owned())
 }
 
 impl Config {
@@ -57,6 +66,10 @@ impl Config {
 			"settings.shell must not be empty"
 		);
 		validate_working_dir(config.settings.working_dir.as_deref())?;
+		ensure!(
+			config.settings.scroll_lines > 0,
+			"settings.scroll_lines must be greater than zero"
+		);
 		for (name, command) in &config.commands {
 			validate_command(name, command)?;
 		}

@@ -9,6 +9,9 @@ pub struct Cli {
 	/// Use this configuration file instead of the standard user location.
 	#[arg(short, long, global = true, env = "RCM_CONFIG", value_name = "PATH")]
 	pub config: Option<PathBuf>,
+	/// Show the command description and all output without the scrolling window.
+	#[arg(short, long, global = true)]
+	pub verbose: bool,
 	#[command(subcommand)]
 	pub command: Option<Commands>,
 }
