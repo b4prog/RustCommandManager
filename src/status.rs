@@ -11,16 +11,16 @@ const RESET: &str = "\x1b[0m";
 pub(crate) struct CommandStatus {
 	command: String,
 	terminal: bool,
-	in_place: bool,
+	compact: bool,
 	finished: bool,
 }
 
 impl CommandStatus {
-	pub(crate) fn start(command: &str, terminal: bool, in_place: bool) -> io::Result<Self> {
+	pub(crate) fn start(command: &str, terminal: bool, compact: bool) -> io::Result<Self> {
 		let status = Self {
 			command: sanitize(command),
 			terminal,
-			in_place,
+			compact,
 			finished: false,
 		};
 		status.write(&status.line(None))?;
@@ -28,13 +28,12 @@ impl CommandStatus {
 	}
 
 	pub(crate) fn finish(&mut self, success: bool) -> io::Result<()> {
-		if self.finished {
+		if self.finished || !self.compact {
+			self.finished = true;
 			return Ok(());
 		}
-		let mut output = if self.in_place {
+		let mut output = if self.terminal {
 			self.clear_header()
-		} else if self.terminal {
-			"\r\n".to_owned()
 		} else {
 			String::new()
 		};
@@ -51,20 +50,28 @@ impl CommandStatus {
 			format!("❯ {}", self.command)
 		};
 		if let Some(success) = success {
-			let (symbol, color) = if success {
-				("✓", GREEN)
-			} else {
-				("✗", RED)
-			};
-			let suffix = if self.terminal {
-				format!(" {color}{symbol}{RESET}")
-			} else {
-				format!(" {symbol}")
-			};
-			line.push_str(&suffix);
+			line.push(' ');
+			line.push_str(&self.marker(success));
 		}
-		line.push_str(if self.terminal { "\r\n" } else { "\n" });
+		line.push_str(self.newline());
 		line
+	}
+
+	fn marker(&self, success: bool) -> String {
+		let (symbol, color) = if success {
+			("✓", GREEN)
+		} else {
+			("✗", RED)
+		};
+		if self.terminal {
+			format!("{color}{symbol}{RESET}")
+		} else {
+			symbol.to_owned()
+		}
+	}
+
+	fn newline(&self) -> &'static str {
+		if self.terminal { "\r\n" } else { "\n" }
 	}
 
 	fn clear_header(&self) -> String {

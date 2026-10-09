@@ -314,6 +314,8 @@ impl CommandOutput {
 	fn finish(&mut self, failed: bool, progress: &mut CommandStatus) -> Result<()> {
 		if let Some(viewport) = &mut self.viewport {
 			viewport.clear(&mut io::stdout().lock())?;
+		} else if self.last_byte.is_some_and(|byte| byte != b'\n') {
+			io::stdout().lock().write_all(b"\r\n")?;
 		}
 		progress.finish(!failed)?;
 		let mut stdout = io::stdout().lock();

@@ -57,12 +57,17 @@ fn execute_step(
 		return crate::terminal::execute(shell, step, working_dir, verbose, scroll_lines);
 	}
 	#[cfg(not(unix))]
-	let _ = (verbose, scroll_lines);
-	run_inherited(shell, step, working_dir)
+	let _ = scroll_lines;
+	run_inherited(shell, step, working_dir, verbose)
 }
 
-fn run_inherited(shell: &str, step: &str, working_dir: Option<&Path>) -> Result<i32> {
-	let mut progress = CommandStatus::start(step, false, false)?;
+fn run_inherited(
+	shell: &str,
+	step: &str,
+	working_dir: Option<&Path>,
+	verbose: bool,
+) -> Result<i32> {
+	let mut progress = CommandStatus::start(step, false, !verbose)?;
 	let mut command = Command::new(shell);
 	command.arg("-c").arg(step);
 	if let Some(directory) = working_dir {

@@ -28,7 +28,11 @@ impl TerminalSession {
 	}
 
 	fn start_with_step(script: &str, step: &str, verbose: bool) -> Result<Self> {
-		let directory = terminal_fixture(script, step)?;
+		Self::start_with_steps(script, &[step], verbose)
+	}
+
+	fn start_with_steps(script: &str, steps: &[&str], verbose: bool) -> Result<Self> {
+		let directory = terminal_fixture(script, steps)?;
 		let pair = native_pty_system().openpty(PtySize {
 			rows: 40,
 			cols: 120,
@@ -147,6 +151,12 @@ impl TerminalSession {
 		);
 		Ok(())
 	}
+
+	fn verify_no_completion_marks(&self) {
+		let output = self.text();
+		assert!(!output.contains('✓'));
+		assert!(!output.contains('✗'));
+	}
 }
 
 impl Drop for TerminalSession {
@@ -156,17 +166,22 @@ impl Drop for TerminalSession {
 	}
 }
 
-fn terminal_fixture(script: &str, step: &str) -> Result<TempDir> {
+fn terminal_fixture(script: &str, steps: &[&str]) -> Result<TempDir> {
 	let directory = tempdir()?;
 	let executable = directory.path().join("command.sh");
 	fs::write(&executable, format!("#!/bin/sh\n{script}\n"))?;
 	fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
 	let working_dir = toml::Value::String(directory.path().display().to_string());
-	let step = toml::Value::String(step.to_owned());
+	let steps = toml::Value::Array(
+		steps
+			.iter()
+			.map(|step| toml::Value::String((*step).to_owned()))
+			.collect(),
+	);
 	fs::write(
 		directory.path().join("config.toml"),
 		format!(
-			"[settings]\nscroll_lines = 3\n[commands.sample]\ndescription = 'Runner test description'\nworking_dir = {working_dir}\nsteps = [{step}]\n"
+			"[settings]\nscroll_lines = 3\n[commands.sample]\ndescription = 'Runner test description'\nworking_dir = {working_dir}\nsteps = {steps}\n"
 		),
 	)?;
 	Ok(directory)
@@ -236,19 +251,80 @@ fn failed_commands_replay_the_complete_colored_stdout_and_stderr() -> Result<()>
 #[test]
 fn verbose_mode_prints_the_description_and_full_output_without_a_viewport() -> Result<()> {
 	let mut session = TerminalSession::start(
-		"for n in 1 2 3 4 5 6 7 8; do printf 'output %s\\n' \"$n\"; done",
+		"for n in 1 2 3 4 5 6 7 8; do printf 'output %s\\n' \"$n\"; done\nprintf 'Ready? '\nread answer",
+		true,
+	)?;
+	session.read_until("Ready?")?;
+	let running = session.parser.screen().contents();
+	for number in 1..=8 {
+		assert!(running.contains(&format!("output {number}")));
+	}
+	session.send(b"yes\n")?;
+	assert_eq!(session.wait()?, 0);
+	let output = session.text();
+	let visible = session.parser.screen().contents();
+	assert!(output.contains("Runner test description"));
+	assert_eq!(output.matches("./command.sh").count(), 1);
+	assert!(!output.contains("\x1b[2K"));
+	assert!(!output.contains("\x1b[?7l"));
+	for number in 1..=8 {
+		assert!(visible.contains(&format!("output {number}")));
+	}
+	session.verify_no_completion_marks();
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn verbose_failures_keep_colored_stdout_and_stderr_without_replaying_them() -> Result<()> {
+	let mut session = TerminalSession::start(
+		"printf '\x1b[32mfirst stdout\x1b[0m\\n'\nprintf '\x1b[31mlast stderr\x1b[0m\\n' >&2\nexit 23",
+		true,
+	)?;
+	assert_eq!(session.wait()?, 23);
+	let output = session.text();
+	let visible = session.parser.screen().contents();
+	assert_eq!(output.matches("./command.sh").count(), 1);
+	assert_eq!(output.matches("\x1b[32mfirst stdout\x1b[0m").count(), 1);
+	assert_eq!(output.matches("\x1b[31mlast stderr\x1b[0m").count(), 1);
+	assert!(visible.contains("first stdout"));
+	assert!(visible.contains("last stderr"));
+	assert!(!output.contains("\x1b[2K"));
+	assert!(!output.contains("\x1b[?7l"));
+	session.verify_no_completion_marks();
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn verbose_mode_retains_output_from_every_step_and_prints_each_command_once() -> Result<()> {
+	let mut session = TerminalSession::start_with_steps(
+		"printf 'Output from %s\\n' \"$1\"",
+		&["./command.sh first", "./command.sh second"],
 		true,
 	)?;
 	assert_eq!(session.wait()?, 0);
 	let output = session.text();
-	assert!(output.contains("Runner test description"));
+	let visible = session.parser.screen().contents();
+	assert_eq!(output.matches("./command.sh first").count(), 1);
+	assert_eq!(output.matches("./command.sh second").count(), 1);
+	assert!(visible.contains("Output from first\n❯ ./command.sh second\nOutput from second"));
 	assert!(!output.contains("\x1b[2K"));
-	assert!(!output.contains("\x1b[?7l"));
-	for number in 1..=8 {
-		assert!(output.contains(&format!("output {number}")));
-	}
-	session.verify_status_colors(true)?;
+	session.verify_no_completion_marks();
 	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn verbose_silent_or_unterminated_output_has_no_completion_marks() -> Result<()> {
+	for (script, expected) in [("exit 0", "❯ ./command.sh"), ("printf tail", "tail")] {
+		let mut session = TerminalSession::start(script, true)?;
+		assert_eq!(session.wait()?, 0);
+		assert!(session.parser.screen().contents().ends_with(expected));
+		assert_eq!(session.text().matches("./command.sh").count(), 1);
+		session.verify_no_completion_marks();
+		session.verify_restored_input();
+	}
 	Ok(())
 }
 

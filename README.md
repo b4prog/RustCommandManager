@@ -117,9 +117,9 @@ are printed after clearing the window. Output is captured in a temporary file,
 so large transcripts do not need to remain in memory.
 
 Each command starts with a grey `❯` followed by the command in purple. When the
-command finishes, a green `✓` or red `✗` is added to its status line. Compact mode
-updates that line in place; verbose mode prints a completed status line after
-the full output. Redirected status messages are plain text on stderr.
+command finishes, compact mode adds a green `✓` or red `✗` to its status line in
+place. Verbose mode keeps all output without completion marks or repeating the
+command. Redirected status messages are plain text on stderr.
 
 Commands run in a pseudo-terminal, preserving terminal colors and interactive
 input, including hidden password prompts that read from `/dev/tty`. Input and

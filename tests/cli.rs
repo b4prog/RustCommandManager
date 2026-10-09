@@ -275,11 +275,30 @@ steps = ['printf "\033[32mcolored\033[0m"']"#,
 		.unwrap();
 	assert!(output.status.success());
 	assert_eq!(output.stdout, b"\x1b[32mcolored\x1b[0m");
-	assert!(
-		String::from_utf8(output.stderr)
-			.unwrap()
-			.contains("Describe the sample command")
-	);
+	let status = String::from_utf8(output.stderr).unwrap();
+	assert!(status.contains("Describe the sample command"));
+	assert_eq!(status.matches("❯ ").count(), 1);
+	assert!(!status.contains('✓'));
+	assert!(!status.contains('✗'));
+	assert!(!status.contains("\x1b"));
+}
+
+#[test]
+fn verbose_failures_preserve_output_without_completion_marks_when_redirected() {
+	let (_directory, path) =
+		fixture("[commands.fail]\nsteps = ['printf output; printf \"stderr\\n\" >&2; exit 23']");
+	let output = cli(&path)
+		.args(["run", "fail", "--verbose"])
+		.output()
+		.unwrap();
+	assert_eq!(output.status.code(), Some(23));
+	assert_eq!(output.stdout, b"output");
+	let status = String::from_utf8(output.stderr).unwrap();
+	assert_eq!(status.matches("❯ ").count(), 1);
+	assert!(status.ends_with("stderr\n"));
+	assert!(!status.contains('✓'));
+	assert!(!status.contains('✗'));
+	assert!(!status.contains("\x1b"));
 }
 
 #[test]
