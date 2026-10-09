@@ -8,7 +8,7 @@ use tempfile::tempdir;
 fn shipped_template_has_described_brew_update_steps() {
 	let config = Config::parse(DEFAULT_CONFIG).unwrap();
 	assert!(!config.settings.shell.trim().is_empty());
-	assert!(config.settings.stop_on_error);
+	assert!(config.commands["brew-update"].stop_on_error);
 	assert_eq!(config.settings.scroll_lines, 5);
 	assert_eq!(config.commands.len(), 1);
 	assert_eq!(
@@ -51,7 +51,7 @@ fn shipped_template_has_described_brew_update_steps() {
 fn omitted_settings_use_defaults() {
 	let config = Config::parse("[commands.sample]\nsteps = ['echo sample']").unwrap();
 	assert!(!config.settings.shell.trim().is_empty());
-	assert!(config.settings.stop_on_error);
+	assert!(config.commands["sample"].stop_on_error);
 	assert!(config.commands["sample"].description.is_empty());
 	assert_eq!(config.commands["sample"].steps[0].command, "echo sample");
 	assert!(config.commands["sample"].steps[0].description.is_empty());
@@ -99,14 +99,25 @@ fn described_inline_steps_can_be_mixed_with_existing_string_steps() {
 #[test]
 fn settings_and_command_details_are_loaded() {
 	let config = Config::parse(
-		"[settings]\nshell = '/bin/zsh'\nstop_on_error = false\n\
-		[commands.sample]\ndescription = 'Sample'\nsteps = ['pwd']",
+		"[settings]\nshell = '/bin/zsh'\n\
+		[commands.sample]\ndescription = 'Sample'\nstop_on_error = false\nsteps = ['pwd']",
 	)
 	.unwrap();
 	assert_eq!(config.settings.shell, "/bin/zsh");
-	assert!(!config.settings.stop_on_error);
+	assert!(!config.commands["sample"].stop_on_error);
 	assert_eq!(config.commands["sample"].description, "Sample");
 	assert_eq!(config.commands["sample"].steps[0].command, "pwd");
+}
+
+#[test]
+fn failure_handling_is_configured_independently_for_each_command() {
+	let config = Config::parse(
+		"[commands.continue]\nstop_on_error = false\nsteps = ['true']\n[commands.default]\nsteps = ['true']\n[commands.stop]\nstop_on_error = true\nsteps = ['true']",
+	)
+	.unwrap();
+	assert!(!config.commands["continue"].stop_on_error);
+	assert!(config.commands["default"].stop_on_error);
+	assert!(config.commands["stop"].stop_on_error);
 }
 
 #[test]
@@ -114,7 +125,15 @@ fn invalid_configuration_is_rejected_before_execution() {
 	let cases = [
 		("[broken", "invalid TOML"),
 		("unknown = true", "unknown field"),
-		("[settings]\nstop_on_eror = false", "unknown field"),
+		("[settings]\nstop_on_error = true", "unknown field"),
+		(
+			"[commands.typo]\nsteps = ['true']\nstop_on_eror = false",
+			"unknown field",
+		),
+		(
+			"[commands.invalid]\nsteps = ['true']\nstop_on_error = 'yes'",
+			"invalid TOML",
+		),
 		(
 			"[settings]\nscroll_lines = 0",
 			"settings.scroll_lines must be greater than zero",

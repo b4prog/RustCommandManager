@@ -21,7 +21,7 @@ fn config_for(steps: &[&str]) -> Config {
 	config
 }
 
-fn run_steps(directory: &Path, steps: &[&str], stop_on_error: bool) -> Output {
+fn run_steps(directory: &Path, steps: &[&str], stop_on_error: Option<bool>) -> Output {
 	let config_directory = tempdir().unwrap();
 	let path = config_directory.path().join("config.toml");
 	let steps = toml::Value::Array(
@@ -30,7 +30,14 @@ fn run_steps(directory: &Path, steps: &[&str], stop_on_error: bool) -> Output {
 			.map(|step| toml::Value::String((*step).to_owned()))
 			.collect(),
 	);
-	fs::write(&path, format!("[settings]\nshell = '/bin/sh'\nstop_on_error = {stop_on_error}\n[commands.sample]\nsteps = {steps}\n")).unwrap();
+	let policy = stop_on_error
+		.map(|value| format!("stop_on_error = {value}\n"))
+		.unwrap_or_default();
+	fs::write(
+		&path,
+		format!("[settings]\nshell = '/bin/sh'\n[commands.sample]\n{policy}steps = {steps}\n"),
+	)
+	.unwrap();
 	Command::new(env!("CARGO_BIN_EXE_rcm"))
 		.env_remove("RCM_CONFIG")
 		.current_dir(directory)
@@ -49,7 +56,7 @@ fn steps_run_in_order_in_the_invocation_folder_with_spaces() {
 	let output = run_steps(
 		&directory,
 		&["printf first > result", "printf second | cat >> result"],
-		true,
+		None,
 	);
 	assert!(
 		output.status.success(),
@@ -68,7 +75,7 @@ fn execution_stops_at_the_first_failure_by_default() {
 	let output = run_steps(
 		directory.path(),
 		&["exit 7", "touch should-not-exist"],
-		true,
+		None,
 	);
 	assert_eq!(output.status.code(), Some(7));
 	assert!(!directory.path().join("should-not-exist").exists());
@@ -80,7 +87,7 @@ fn continuing_after_failure_preserves_the_first_failure_code() {
 	let output = run_steps(
 		directory.path(),
 		&["exit 7", "touch continued", "exit 9"],
-		false,
+		Some(false),
 	);
 	assert_eq!(output.status.code(), Some(7));
 	assert!(directory.path().join("continued").exists());
@@ -92,7 +99,7 @@ fn every_step_starts_in_the_invocation_folder_even_after_a_previous_step_changes
 	let output = run_steps(
 		directory.path(),
 		&["pwd > first", "mkdir nested && cd nested", "pwd > last"],
-		true,
+		None,
 	);
 	assert!(
 		output.status.success(),
@@ -118,7 +125,7 @@ fn each_step_uses_a_separate_shell() {
 			"export RCM_TEST_LOCAL=changed",
 			"printf '%s' \"${RCM_TEST_LOCAL-unset}\" > result",
 		],
-		true,
+		None,
 	);
 	assert!(
 		output.status.success(),

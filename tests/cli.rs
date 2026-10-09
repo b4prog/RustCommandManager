@@ -346,7 +346,7 @@ description = 'Explain the second step.'"#,
 fn step_descriptions_follow_failure_handling_and_only_describe_steps_that_run() {
 	for stop_on_error in [true, false] {
 		let (_directory, path) = fixture(&format!(
-			"[settings]\nstop_on_error = {stop_on_error}\n[commands.sample]\nsteps = [{{ command = 'exit 23', description = 'Fail this step.' }}, {{ command = 'printf continued', description = 'Continue with this step.' }}]"
+			"[commands.sample]\nstop_on_error = {stop_on_error}\nsteps = [{{ command = 'exit 23', description = 'Fail this step.' }}, {{ command = 'printf continued', description = 'Continue with this step.' }}]"
 		));
 		let output = cli(&path)
 			.args(["run", "sample", "--verbose"])
@@ -369,6 +369,33 @@ fn step_descriptions_follow_failure_handling_and_only_describe_steps_that_run() 
 		);
 		assert!(!status.contains('✓'));
 		assert!(!status.contains('✗'));
+	}
+}
+
+#[test]
+fn command_failure_policies_are_independent_and_continuing_commands_still_fail() {
+	let (_directory, path) = fixture(
+		"[commands.continue]\nstop_on_error = false\nsteps = ['exit 7', 'printf continued']\n[commands.stop]\nsteps = ['exit 23', 'printf should-not-run']",
+	);
+	for verbose in [false, true] {
+		for (name, exit_code, expected_output) in [
+			("continue", 7, b"continued".as_slice()),
+			("stop", 23, b"".as_slice()),
+		] {
+			let mut command = cli(&path);
+			command.args(["run", name]);
+			if verbose {
+				command.arg("--verbose");
+			}
+			let output = command.output().unwrap();
+			assert_eq!(output.status.code(), Some(exit_code));
+			assert_eq!(output.stdout, expected_output);
+			assert!(
+				!String::from_utf8(output.stderr)
+					.unwrap()
+					.contains("should-not-run")
+			);
+		}
 	}
 }
 

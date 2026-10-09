@@ -24,7 +24,6 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
 	pub shell: String,
-	pub stop_on_error: bool,
 	pub scroll_lines: u16,
 }
 
@@ -34,6 +33,8 @@ pub struct Settings {
 pub struct CommandSet {
 	#[serde(default)]
 	pub description: String,
+	#[serde(default = "default_stop_on_error")]
+	pub stop_on_error: bool,
 	pub steps: Vec<CommandStep>,
 }
 
@@ -85,7 +86,6 @@ impl Default for Settings {
 	fn default() -> Self {
 		Self {
 			shell: default_shell(),
-			stop_on_error: true,
 			scroll_lines: 5,
 		}
 	}
@@ -96,6 +96,10 @@ fn default_shell() -> String {
 		.ok()
 		.filter(|shell| !shell.trim().is_empty())
 		.unwrap_or_else(|| "/bin/sh".to_owned())
+}
+
+fn default_stop_on_error() -> bool {
+	true
 }
 
 impl Config {

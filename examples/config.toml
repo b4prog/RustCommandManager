@@ -6,10 +6,10 @@
 [settings]
 # Optional override; otherwise rcm uses $SHELL, falling back to /bin/sh.
 # shell = "/bin/zsh"
-stop_on_error = true
 scroll_lines = 5
 
 [commands.brew-update]
+stop_on_error = true
 description = """
 Refresh Homebrew's package definitions, upgrade installed formulae and casks,
 including casks that auto-update or use the latest release, without confirmation.

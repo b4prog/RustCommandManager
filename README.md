@@ -1,8 +1,8 @@
 # Rust Command Manager
 
 `rcm` is a Rust CLI that runs named sets of shell commands from a user TOML file.
-macOS is the primary platform. Command sets run sequentially and share configurable
-defaults for the shell and failure handling.
+macOS is the primary platform. Command sets run sequentially, share shell settings,
+and control failure handling individually.
 
 ## Build and install
 
@@ -70,11 +70,11 @@ The complete first-run template is [examples/config.toml](examples/config.toml).
 [settings]
 # Optional override; defaults to $SHELL, falling back to /bin/sh.
 # shell = "/bin/zsh"
-stop_on_error = true
 scroll_lines = 5
 
 [commands.inspect]
 description = "Inspect a project"
+stop_on_error = true
 steps = [
   { command = 'pwd', description = 'Show the current folder.' },
   { command = 'ls -la', description = 'List all files and their details.' },
@@ -84,16 +84,16 @@ steps = [
 | Field | Behavior |
 | --- | --- |
 | `settings.shell` | Optional shell executable called with `-c`; defaults to `$SHELL`, falling back to `/bin/sh` when the variable is missing, empty, or not UTF-8. An explicit value takes precedence. Use an executable path or name, without flags. |
-| `settings.stop_on_error` | Defaults to `true`. Set to `false` to attempt later steps after a step fails. |
 | `settings.scroll_lines` | Number of rows in the live output window; defaults to `5` and must be greater than zero. The window fits within the terminal height. |
 | `commands.NAME.description` | Optional description displayed by `rcm list`. |
+| `commands.NAME.stop_on_error` | Defaults to `true` for each command. Set to `false` to attempt later steps after a step fails. The command still returns its first failing step's exit code. |
 | `commands.NAME.steps` | Required, nonempty array of objects with `command` and `description` fields, executed in order. |
 | `commands.NAME.steps[].command` | Required, nonempty shell command string. |
 | `commands.NAME.steps[].description` | Required, nonempty explanation for a described step, displayed beneath its command with `--verbose`. Supports multiline TOML strings. |
 
 The example and first-run configuration include `brew-update`, matching the
 SwiftAutomation command: `brew update`, `brew upgrade --greedy --no-ask`, then
-`brew cleanup -s`. The default `stop_on_error = true` stops the sequence if a
+`brew cleanup -s`. The command's default `stop_on_error = true` stops the sequence if a
 step fails. Homebrew must be installed and available on `PATH`. See the
 [Homebrew command reference](https://docs.brew.sh/Manpage) for the upgrade and
 cleanup options.
@@ -135,8 +135,9 @@ output streams normally without the scrolling window; stdin and stderr are
 inherited directly. In terminal mode, stdout and stderr share the captured
 terminal output stream.
 
-Successful sets return exit code `0`. A failed set returns the first failed
-step's exit code, even when `stop_on_error = false`; signal termination and
+Successful sets return exit code `0`. If any step fails, the command is considered
+failed and returns its first failing step's exit code, even when that command has
+`stop_on_error = false`; signal termination and
 application errors return `1`. Failure to start a shell aborts the set.
 Invalid TOML, unknown fields, empty names or steps, and unknown command sets
 produce an error with a nonzero exit status.

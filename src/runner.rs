@@ -29,7 +29,7 @@ pub fn run_set_with_options(config: &Config, name: &str, verbose: bool) -> Resul
 			continue;
 		}
 		first_failure.get_or_insert(code);
-		if config.settings.stop_on_error {
+		if command.stop_on_error {
 			break;
 		}
 	}

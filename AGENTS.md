@@ -39,3 +39,5 @@ and tests.
   and exit before executing any configured command.
 - Keep errors actionable and propagate command failures through the exit status.
 - Start every step in the folder from which `rcm` was launched.
+- Each command controls `stop_on_error`, defaulting to `true`. A failed step
+  makes the command fail even when it continues with later steps.
