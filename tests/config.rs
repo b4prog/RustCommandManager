@@ -52,7 +52,6 @@ fn omitted_settings_use_defaults() {
 	let config = Config::parse("[commands.sample]\nsteps = ['echo sample']").unwrap();
 	assert!(!config.settings.shell.trim().is_empty());
 	assert!(config.settings.stop_on_error);
-	assert!(config.settings.working_dir.is_none());
 	assert!(config.commands["sample"].description.is_empty());
 	assert_eq!(config.commands["sample"].steps[0].command, "echo sample");
 	assert!(config.commands["sample"].steps[0].description.is_empty());
@@ -98,23 +97,16 @@ fn described_inline_steps_can_be_mixed_with_existing_string_steps() {
 }
 
 #[test]
-fn settings_and_command_directories_are_loaded() {
+fn settings_and_command_details_are_loaded() {
 	let config = Config::parse(
-		"[settings]\nshell = '/bin/zsh'\nstop_on_error = false\nworking_dir = '/tmp/global'\n\
-		[commands.sample]\ndescription = 'Sample'\nsteps = ['pwd']\nworking_dir = '/tmp/project'",
+		"[settings]\nshell = '/bin/zsh'\nstop_on_error = false\n\
+		[commands.sample]\ndescription = 'Sample'\nsteps = ['pwd']",
 	)
 	.unwrap();
 	assert_eq!(config.settings.shell, "/bin/zsh");
 	assert!(!config.settings.stop_on_error);
-	assert_eq!(
-		config.settings.working_dir,
-		Some(PathBuf::from("/tmp/global"))
-	);
-	assert_eq!(
-		config.commands["sample"].working_dir,
-		Some(PathBuf::from("/tmp/project"))
-	);
 	assert_eq!(config.commands["sample"].description, "Sample");
+	assert_eq!(config.commands["sample"].steps[0].command, "pwd");
 }
 
 #[test]
@@ -130,10 +122,6 @@ fn invalid_configuration_is_rejected_before_execution() {
 		(
 			"[settings]\nshell = '  '",
 			"settings.shell must not be empty",
-		),
-		(
-			"[settings]\nworking_dir = ''",
-			"working_dir must not be empty",
 		),
 		(
 			"[commands.' ']\nsteps = ['true']",
@@ -168,10 +156,6 @@ fn invalid_configuration_is_rejected_before_execution() {
 		(
 			"[commands.typo]\nsteps = ['true']\nstep = 'false'",
 			"unknown field",
-		),
-		(
-			"[commands.empty]\nsteps = ['true']\nworking_dir = ''",
-			"working_dir must not be empty",
 		),
 	];
 	for (source, expected_error) in cases {

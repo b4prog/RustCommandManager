@@ -26,7 +26,6 @@ pub struct Settings {
 	pub shell: String,
 	pub stop_on_error: bool,
 	pub scroll_lines: u16,
-	pub working_dir: Option<PathBuf>,
 }
 
 /// Shell commands executed sequentially under one name.
@@ -36,7 +35,6 @@ pub struct CommandSet {
 	#[serde(default)]
 	pub description: String,
 	pub steps: Vec<CommandStep>,
-	pub working_dir: Option<PathBuf>,
 }
 
 /// One shell command and its explanation, displayed when running verbosely.
@@ -89,7 +87,6 @@ impl Default for Settings {
 			shell: default_shell(),
 			stop_on_error: true,
 			scroll_lines: 5,
-			working_dir: None,
 		}
 	}
 }
@@ -109,7 +106,6 @@ impl Config {
 			!config.settings.shell.trim().is_empty(),
 			"settings.shell must not be empty"
 		);
-		validate_working_dir(config.settings.working_dir.as_deref())?;
 		ensure!(
 			config.settings.scroll_lines > 0,
 			"settings.scroll_lines must be greater than zero"
@@ -143,15 +139,6 @@ fn validate_command(name: &str, command: &CommandSet) -> Result<()> {
 			.iter()
 			.all(|step| !step.command.trim().is_empty()),
 		"command set {name:?} contains an empty step"
-	);
-	validate_working_dir(command.working_dir.as_deref())
-		.with_context(|| format!("invalid command set {name:?}"))
-}
-
-fn validate_working_dir(path: Option<&Path>) -> Result<()> {
-	ensure!(
-		path.is_none_or(|path| !path.as_os_str().is_empty()),
-		"working_dir must not be empty"
 	);
 	Ok(())
 }

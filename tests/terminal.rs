@@ -79,6 +79,7 @@ impl TerminalSession {
 		let mut reader = pair.master.try_clone_reader()?;
 		let input = pair.master.take_writer()?;
 		let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_rcm"));
+		command.cwd(directory.path());
 		command.args([
 			"--config",
 			directory.path().join("config.toml").to_str().unwrap(),
@@ -207,11 +208,10 @@ fn terminal_fixture(script: &str, steps: toml::Value) -> Result<TempDir> {
 	let executable = directory.path().join("command.sh");
 	fs::write(&executable, format!("#!/bin/sh\n{script}\n"))?;
 	fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
-	let working_dir = toml::Value::String(directory.path().display().to_string());
 	fs::write(
 		directory.path().join("config.toml"),
 		format!(
-			"[settings]\nscroll_lines = 3\n[commands.sample]\ndescription = 'Runner test description'\nworking_dir = {working_dir}\nsteps = {steps}\n"
+			"[settings]\nscroll_lines = 3\n[commands.sample]\ndescription = 'Runner test description'\nsteps = {steps}\n"
 		),
 	)?;
 	Ok(directory)

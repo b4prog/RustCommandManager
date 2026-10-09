@@ -2,7 +2,7 @@
 
 `rcm` is a Rust CLI that runs named sets of shell commands from a user TOML file.
 macOS is the primary platform. Command sets run sequentially and share configurable
-defaults for the shell, working directory, and failure handling.
+defaults for the shell and failure handling.
 
 ## Build and install
 
@@ -72,13 +72,11 @@ The complete first-run template is [examples/config.toml](examples/config.toml).
 # shell = "/bin/zsh"
 stop_on_error = true
 scroll_lines = 5
-# working_dir = "/absolute/path/to/project"
 
 [commands.inspect]
 description = "Inspect a project"
-working_dir = "/absolute/path/to/project"
 steps = [
-  { command = 'pwd', description = 'Show the working directory.' },
+  { command = 'pwd', description = 'Show the current folder.' },
   { command = 'ls -la', description = 'List all files and their details.' },
 ]
 ```
@@ -88,12 +86,10 @@ steps = [
 | `settings.shell` | Optional shell executable called with `-c`; defaults to `$SHELL`, falling back to `/bin/sh` when the variable is missing, empty, or not UTF-8. An explicit value takes precedence. Use an executable path or name, without flags. |
 | `settings.stop_on_error` | Defaults to `true`. Set to `false` to attempt later steps after a step fails. |
 | `settings.scroll_lines` | Number of rows in the live output window; defaults to `5` and must be greater than zero. The window fits within the terminal height. |
-| `settings.working_dir` | Optional default working directory; otherwise the invocation directory is inherited. |
 | `commands.NAME.description` | Optional description displayed by `rcm list`. |
 | `commands.NAME.steps` | Required, nonempty array of objects with `command` and `description` fields, executed in order. |
 | `commands.NAME.steps[].command` | Required, nonempty shell command string. |
 | `commands.NAME.steps[].description` | Required, nonempty explanation for a described step, displayed beneath its command with `--verbose`. Supports multiline TOML strings. |
-| `commands.NAME.working_dir` | Optional override of the global working directory. |
 
 The example and first-run configuration include `brew-update`, matching the
 SwiftAutomation command: `brew update`, `brew upgrade --greedy --no-ask`, then
@@ -108,9 +104,8 @@ and first-run template give every step a description, including the Homebrew
 explanations from SwiftAutomation. Existing configuration files are preserved;
 add these fields to your file to display descriptions for your own steps.
 
-Relative working directories are resolved from the directory where you invoke
-`rcm`. Working directory paths are used literally; use an absolute path instead
-of `~` or environment variables in these fields.
+Every step starts in the folder where you launch `rcm`, regardless of where the
+configuration file is stored.
 
 Every step starts a separate shell with the inherited environment.
 Pipelines, redirections, and shell expansion work within each step. A `cd` or

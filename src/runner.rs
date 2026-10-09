@@ -1,5 +1,4 @@
 use std::io::{self, IsTerminal};
-use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -17,16 +16,11 @@ pub fn run_set_with_options(config: &Config, name: &str, verbose: bool) -> Resul
 	let command = config.commands.get(name).with_context(|| {
 		format!("unknown command set {name:?}; use `rcm list` to see available sets")
 	})?;
-	let working_dir = command
-		.working_dir
-		.as_deref()
-		.or(config.settings.working_dir.as_deref());
 	let mut first_failure = None;
 	for (index, step) in command.steps.iter().enumerate() {
 		let code = execute_step(
 			&config.settings.shell,
 			step,
-			working_dir,
 			verbose,
 			config.settings.scroll_lines,
 		)
@@ -42,34 +36,20 @@ pub fn run_set_with_options(config: &Config, name: &str, verbose: bool) -> Resul
 	Ok(first_failure.unwrap_or(0))
 }
 
-fn execute_step(
-	shell: &str,
-	step: &CommandStep,
-	working_dir: Option<&Path>,
-	verbose: bool,
-	scroll_lines: u16,
-) -> Result<i32> {
+fn execute_step(shell: &str, step: &CommandStep, verbose: bool, scroll_lines: u16) -> Result<i32> {
 	#[cfg(unix)]
 	if io::stdout().is_terminal() {
-		return crate::terminal::execute(shell, step, working_dir, verbose, scroll_lines);
+		return crate::terminal::execute(shell, step, verbose, scroll_lines);
 	}
 	#[cfg(not(unix))]
 	let _ = scroll_lines;
-	run_inherited(shell, step, working_dir, verbose)
+	run_inherited(shell, step, verbose)
 }
 
-fn run_inherited(
-	shell: &str,
-	step: &CommandStep,
-	working_dir: Option<&Path>,
-	verbose: bool,
-) -> Result<i32> {
+fn run_inherited(shell: &str, step: &CommandStep, verbose: bool) -> Result<i32> {
 	let mut progress = CommandStatus::start(&step.command, &step.description, false, !verbose)?;
 	let mut command = Command::new(shell);
 	command.arg("-c").arg(&step.command);
-	if let Some(directory) = working_dir {
-		command.current_dir(directory);
-	}
 	let result = command
 		.status()
 		.with_context(|| format!("could not start shell {shell:?}"));

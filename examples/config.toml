@@ -8,7 +8,6 @@
 # shell = "/bin/zsh"
 stop_on_error = true
 scroll_lines = 5
-# working_dir = "/absolute/path/to/your/project"
 
 [commands.brew-update]
 description = """
@@ -32,12 +31,3 @@ The upgrades completed successfully; remove old Homebrew versions and cached dow
 -s also removes downloads for packages that are not installed, reclaiming disk space.
 """ },
 ]
-
-# A command set can override the global working directory:
-# [commands.project]
-# description = "Run commands in a project directory"
-# working_dir = "/absolute/path/to/your/project"
-# steps = [
-#   { command = 'pwd', description = 'Show the working directory.' },
-#   { command = 'ls', description = 'List files in the project.' },
-# ]

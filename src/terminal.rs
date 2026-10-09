@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{self, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, RawFd};
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -13,15 +12,9 @@ use crate::config::CommandStep;
 use crate::status::CommandStatus;
 use crate::viewport::Viewport;
 
-pub(crate) fn execute(
-	shell: &str,
-	step: &CommandStep,
-	directory: Option<&Path>,
-	verbose: bool,
-	lines: u16,
-) -> Result<i32> {
+pub(crate) fn execute(shell: &str, step: &CommandStep, verbose: bool, lines: u16) -> Result<i32> {
 	let mut progress = CommandStatus::start(&step.command, &step.description, true, !verbose)?;
-	let mut session = Session::spawn(shell, &step.command, directory)?;
+	let mut session = Session::spawn(shell, &step.command)?;
 	let _input_mode = InputMode::enter()?;
 	let mut output = CommandOutput::new(!verbose, session.size, lines)?;
 	let result = session.stream(&mut output).and_then(|()| {
@@ -49,7 +42,7 @@ struct Session {
 }
 
 impl Session {
-	fn spawn(shell: &str, step: &str, directory: Option<&Path>) -> Result<Self> {
+	fn spawn(shell: &str, step: &str) -> Result<Self> {
 		let size = terminal_size();
 		let pair = native_pty_system()
 			.openpty(size)
@@ -69,9 +62,8 @@ impl Session {
 		let stdin = InputForwarder::new()?;
 		let mut command = CommandBuilder::new(shell);
 		command.args(["-c", step]);
-		if let Some(directory) = directory {
-			command.cwd(directory);
-		}
+		// The PTY builder defaults to the home folder; preserve rcm's launch folder.
+		command.cwd(std::env::current_dir().context("could not determine the current folder")?);
 		if std::env::var_os("TERM").is_none() {
 			command.env("TERM", "xterm-256color");
 		}

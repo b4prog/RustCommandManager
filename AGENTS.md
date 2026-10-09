@@ -38,3 +38,4 @@ and tests.
 - On first run, create the configuration, open it with the default system app,
   and exit before executing any configured command.
 - Keep errors actionable and propagate command failures through the exit status.
+- Start every step in the folder from which `rcm` was launched.
