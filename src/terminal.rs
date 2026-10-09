@@ -9,18 +9,19 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
 use filedescriptor::{FileDescriptor, POLLIN, poll, pollfd};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+use crate::config::CommandStep;
 use crate::status::CommandStatus;
 use crate::viewport::Viewport;
 
 pub(crate) fn execute(
 	shell: &str,
-	step: &str,
+	step: &CommandStep,
 	directory: Option<&Path>,
 	verbose: bool,
 	lines: u16,
 ) -> Result<i32> {
-	let mut progress = CommandStatus::start(step, true, !verbose)?;
-	let mut session = Session::spawn(shell, step, directory)?;
+	let mut progress = CommandStatus::start(&step.command, &step.description, true, !verbose)?;
+	let mut session = Session::spawn(shell, &step.command, directory)?;
 	let _input_mode = InputMode::enter()?;
 	let mut output = CommandOutput::new(!verbose, session.size, lines)?;
 	let result = session.stream(&mut output).and_then(|()| {

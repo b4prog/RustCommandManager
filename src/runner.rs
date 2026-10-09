@@ -4,7 +4,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
-use crate::config::Config;
+use crate::config::{CommandStep, Config};
 use crate::status::CommandStatus;
 
 /// Run a named command set, returning zero or its first failing step's exit code.
@@ -22,9 +22,6 @@ pub fn run_set_with_options(config: &Config, name: &str, verbose: bool) -> Resul
 		.as_deref()
 		.or(config.settings.working_dir.as_deref());
 	let mut first_failure = None;
-	if verbose && !command.description.is_empty() {
-		eprintln!("{}", command.description);
-	}
 	for (index, step) in command.steps.iter().enumerate() {
 		let code = execute_step(
 			&config.settings.shell,
@@ -47,7 +44,7 @@ pub fn run_set_with_options(config: &Config, name: &str, verbose: bool) -> Resul
 
 fn execute_step(
 	shell: &str,
-	step: &str,
+	step: &CommandStep,
 	working_dir: Option<&Path>,
 	verbose: bool,
 	scroll_lines: u16,
@@ -63,13 +60,13 @@ fn execute_step(
 
 fn run_inherited(
 	shell: &str,
-	step: &str,
+	step: &CommandStep,
 	working_dir: Option<&Path>,
 	verbose: bool,
 ) -> Result<i32> {
-	let mut progress = CommandStatus::start(step, false, !verbose)?;
+	let mut progress = CommandStatus::start(&step.command, &step.description, false, !verbose)?;
 	let mut command = Command::new(shell);
-	command.arg("-c").arg(step);
+	command.arg("-c").arg(&step.command);
 	if let Some(directory) = working_dir {
 		command.current_dir(directory);
 	}

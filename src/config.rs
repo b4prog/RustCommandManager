@@ -35,8 +35,52 @@ pub struct Settings {
 pub struct CommandSet {
 	#[serde(default)]
 	pub description: String,
-	pub steps: Vec<String>,
+	pub steps: Vec<CommandStep>,
 	pub working_dir: Option<PathBuf>,
+}
+
+/// One shell command and its explanation, displayed when running verbosely.
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "StepDefinition")]
+pub struct CommandStep {
+	pub command: String,
+	pub description: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StepDefinition {
+	Legacy(String),
+	Described(StepDetails),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StepDetails {
+	command: String,
+	description: String,
+}
+
+impl TryFrom<StepDefinition> for CommandStep {
+	type Error = anyhow::Error;
+	fn try_from(definition: StepDefinition) -> Result<Self> {
+		match definition {
+			StepDefinition::Legacy(command) => Ok(Self {
+				command,
+				description: String::new(),
+			}),
+			StepDefinition::Described(step) => {
+				ensure!(
+					!step.description.trim().is_empty(),
+					"step description must not be empty"
+				);
+				Ok(Self {
+					command: step.command,
+					description: step.description,
+				})
+			}
+		}
+	}
 }
 
 impl Default for Settings {
@@ -94,7 +138,10 @@ fn validate_command(name: &str, command: &CommandSet) -> Result<()> {
 		"command set {name:?} must contain at least one step"
 	);
 	ensure!(
-		command.steps.iter().all(|step| !step.trim().is_empty()),
+		command
+			.steps
+			.iter()
+			.all(|step| !step.command.trim().is_empty()),
 		"command set {name:?} contains an empty step"
 	);
 	validate_working_dir(command.working_dir.as_deref())

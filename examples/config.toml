@@ -1,6 +1,7 @@
 # Rust Command Manager configuration.
 # Add a [commands.NAME] table for each command set, then run: rcm run NAME
 # Each step starts a separate shell, so put related shell state in one step.
+# Give each step a command and a description shown with --verbose.
 
 [settings]
 # Optional override; otherwise rcm uses $SHELL, falling back to /bin/sh.
@@ -15,21 +16,28 @@ Refresh Homebrew's package definitions, upgrade installed formulae and casks,
 including casks that auto-update or use the latest release, without confirmation.
 Remove old versions and cached downloads for packages that are not installed.
 """
-steps = [
-  'brew update',
-  'brew upgrade --greedy --no-ask',
-  'brew cleanup -s',
-]
 
-[commands.hello]
-description = "Run the sample command set"
 steps = [
-  'printf "Hello from rcm!\n"',
-  'printf "Edit this command set or add your own with rcm config.\n"',
+  { command = 'brew update', description = """
+Refresh Homebrew's formula and cask definitions from its configured sources.
+The following upgrade uses these definitions to find available package versions.
+""" },
+  { command = 'brew upgrade --greedy --no-ask', description = """
+The Homebrew definitions were refreshed successfully; upgrade installed formulae and casks.
+--greedy also includes casks that auto-update or use an unversioned latest release.
+--no-ask skips confirmation before downloading and upgrading packages.
+""" },
+  { command = 'brew cleanup -s', description = """
+The upgrades completed successfully; remove old Homebrew versions and cached downloads.
+-s also removes downloads for packages that are not installed, reclaiming disk space.
+""" },
 ]
 
 # A command set can override the global working directory:
 # [commands.project]
 # description = "Run commands in a project directory"
 # working_dir = "/absolute/path/to/your/project"
-# steps = ['pwd', 'ls']
+# steps = [
+#   { command = 'pwd', description = 'Show the working directory.' },
+#   { command = 'ls', description = 'List files in the project.' },
+# ]

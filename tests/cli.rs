@@ -89,7 +89,7 @@ fn plain_rcm_creates_and_opens_the_missing_default_configuration() {
 	assert!(
 		String::from_utf8(subsequent.stdout)
 			.unwrap()
-			.contains("hello\tRun the sample command set")
+			.contains("brew-update\tRefresh Homebrew's package definitions")
 	);
 	assert_eq!(fs::read_to_string(&path).unwrap(), DEFAULT_CONFIG);
 	assert_eq!(
@@ -104,7 +104,7 @@ fn first_run_creates_and_opens_the_configuration_without_running_commands() {
 	let path = directory.path().join("Application Support/rcm/config.toml");
 	let mut command = cli(&path);
 	with_fake_opener(&mut command, directory.path(), 0);
-	let output = command.args(["run", "hello"]).output().unwrap();
+	let output = command.args(["run", "brew-update"]).output().unwrap();
 	assert!(
 		output.status.success(),
 		"{}",
@@ -117,7 +117,7 @@ fn first_run_creates_and_opens_the_configuration_without_running_commands() {
 	);
 	let stdout = String::from_utf8(output.stdout).unwrap();
 	assert!(stdout.contains("Created configuration"));
-	assert!(!stdout.contains("Hello from rcm!"));
+	assert!(!stdout.contains("❯ "));
 	assert!(output.stderr.is_empty());
 }
 
@@ -131,7 +131,7 @@ fn subsequent_runs_list_commands_without_reopening_or_rewriting_the_file() {
 	assert!(
 		String::from_utf8(output.stdout)
 			.unwrap()
-			.contains("hello\tRun the sample command set")
+			.contains("brew-update\tRefresh Homebrew's package definitions")
 	);
 	assert!(!directory.path().join("opened").exists());
 	assert_eq!(fs::read_to_string(&path).unwrap(), DEFAULT_CONFIG);
@@ -263,7 +263,7 @@ fn shipped_brew_update_stops_before_cleanup_when_upgrade_fails() {
 }
 
 #[test]
-fn verbose_mode_prints_the_description_and_preserves_colors_when_redirected() {
+fn verbose_mode_preserves_colors_without_printing_the_set_description_when_redirected() {
 	let (_directory, path) = fixture(
 		r#"[commands.sample]
 description = 'Describe the sample command'
@@ -276,11 +276,18 @@ steps = ['printf "\033[32mcolored\033[0m"']"#,
 	assert!(output.status.success());
 	assert_eq!(output.stdout, b"\x1b[32mcolored\x1b[0m");
 	let status = String::from_utf8(output.stderr).unwrap();
-	assert!(status.contains("Describe the sample command"));
+	assert!(!status.contains("Describe the sample command"));
 	assert_eq!(status.matches("❯ ").count(), 1);
 	assert!(!status.contains('✓'));
 	assert!(!status.contains('✗'));
 	assert!(!status.contains("\x1b"));
+	let listing = cli(&path).arg("list").output().unwrap();
+	assert!(listing.status.success());
+	assert!(
+		String::from_utf8(listing.stdout)
+			.unwrap()
+			.contains("Describe the sample command")
+	);
 }
 
 #[test]
@@ -299,6 +306,89 @@ fn verbose_failures_preserve_output_without_completion_marks_when_redirected() {
 	assert!(!status.contains('✓'));
 	assert!(!status.contains('✗'));
 	assert!(!status.contains("\x1b"));
+}
+
+#[test]
+fn step_descriptions_are_printed_beneath_their_commands_only_in_verbose_mode() {
+	let (_directory, path) = fixture(
+		r#"[commands.sample]
+description = 'Explain the whole set.'
+[[commands.sample.steps]]
+command = 'printf first'
+description = """
+Explain the first step.
+Include its details.
+"""
+[[commands.sample.steps]]
+command = 'printf second'
+description = 'Explain the second step.'"#,
+	);
+	let output = cli(&path)
+		.args(["run", "sample", "--verbose"])
+		.output()
+		.unwrap();
+	assert!(output.status.success());
+	assert_eq!(output.stdout, b"firstsecond");
+	assert_eq!(
+		String::from_utf8(output.stderr).unwrap(),
+		"❯ printf first\n  Explain the first step.\n  Include its details.\n❯ printf second\n  Explain the second step.\n"
+	);
+	let compact = cli(&path).args(["run", "sample"]).output().unwrap();
+	assert!(compact.status.success());
+	assert_eq!(compact.stdout, b"firstsecond");
+	let status = String::from_utf8(compact.stderr).unwrap();
+	assert!(!status.contains("Explain"));
+	assert!(status.contains("❯ printf first ✓"));
+	assert!(status.contains("❯ printf second ✓"));
+}
+
+#[test]
+fn step_descriptions_follow_failure_handling_and_only_describe_steps_that_run() {
+	for stop_on_error in [true, false] {
+		let (_directory, path) = fixture(&format!(
+			"[settings]\nstop_on_error = {stop_on_error}\n[commands.sample]\nsteps = [{{ command = 'exit 23', description = 'Fail this step.' }}, {{ command = 'printf continued', description = 'Continue with this step.' }}]"
+		));
+		let output = cli(&path)
+			.args(["run", "sample", "--verbose"])
+			.output()
+			.unwrap();
+		assert_eq!(output.status.code(), Some(23));
+		assert_eq!(
+			output.stdout,
+			if stop_on_error {
+				b"".as_slice()
+			} else {
+				b"continued"
+			}
+		);
+		let status = String::from_utf8(output.stderr).unwrap();
+		assert!(status.contains("❯ exit 23\n  Fail this step.\n"));
+		assert_eq!(
+			status.contains("❯ printf continued\n  Continue with this step.\n"),
+			!stop_on_error
+		);
+		assert!(!status.contains('✓'));
+		assert!(!status.contains('✗'));
+	}
+}
+
+#[test]
+fn shipped_brew_update_explains_every_step_in_verbose_mode() {
+	let (directory, path) = fixture(DEFAULT_CONFIG);
+	let output = brew_cli(directory.path(), &path)
+		.arg("--verbose")
+		.output()
+		.unwrap();
+	assert!(output.status.success());
+	let status = String::from_utf8(output.stderr).unwrap();
+	assert!(status.contains("❯ brew update\n  Refresh Homebrew's formula and cask definitions"));
+	assert!(status.contains(
+		"❯ brew upgrade --greedy --no-ask\n  The Homebrew definitions were refreshed successfully"
+	));
+	assert!(status.contains("❯ brew cleanup -s\n  The upgrades completed successfully"));
+	assert_eq!(status.matches("❯ ").count(), 3);
+	assert!(!status.contains('✓'));
+	assert!(!status.contains('✗'));
 }
 
 #[test]
@@ -429,5 +519,9 @@ fn global_config_option_is_accepted_after_a_subcommand() {
 		.output()
 		.unwrap();
 	assert!(output.status.success());
-	assert!(String::from_utf8(output.stdout).unwrap().contains("hello"));
+	assert!(
+		String::from_utf8(output.stdout)
+			.unwrap()
+			.contains("brew-update")
+	);
 }

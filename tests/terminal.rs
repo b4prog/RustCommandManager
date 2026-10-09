@@ -32,7 +32,43 @@ impl TerminalSession {
 	}
 
 	fn start_with_steps(script: &str, steps: &[&str], verbose: bool) -> Result<Self> {
+		let steps = toml::Value::Array(
+			steps
+				.iter()
+				.map(|step| toml::Value::String((*step).to_owned()))
+				.collect(),
+		);
 		let directory = terminal_fixture(script, steps)?;
+		Self::start_fixture(directory, verbose)
+	}
+
+	fn start_with_described_steps(
+		script: &str,
+		steps: &[(&str, &str)],
+		verbose: bool,
+	) -> Result<Self> {
+		let steps = toml::Value::Array(
+			steps
+				.iter()
+				.map(|(command, description)| {
+					toml::Value::Table(toml::map::Map::from_iter([
+						(
+							"command".to_owned(),
+							toml::Value::String((*command).to_owned()),
+						),
+						(
+							"description".to_owned(),
+							toml::Value::String((*description).to_owned()),
+						),
+					]))
+				})
+				.collect(),
+		);
+		let directory = terminal_fixture(script, steps)?;
+		Self::start_fixture(directory, verbose)
+	}
+
+	fn start_fixture(directory: TempDir, verbose: bool) -> Result<Self> {
 		let pair = native_pty_system().openpty(PtySize {
 			rows: 40,
 			cols: 120,
@@ -166,18 +202,12 @@ impl Drop for TerminalSession {
 	}
 }
 
-fn terminal_fixture(script: &str, steps: &[&str]) -> Result<TempDir> {
+fn terminal_fixture(script: &str, steps: toml::Value) -> Result<TempDir> {
 	let directory = tempdir()?;
 	let executable = directory.path().join("command.sh");
 	fs::write(&executable, format!("#!/bin/sh\n{script}\n"))?;
 	fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
 	let working_dir = toml::Value::String(directory.path().display().to_string());
-	let steps = toml::Value::Array(
-		steps
-			.iter()
-			.map(|step| toml::Value::String((*step).to_owned()))
-			.collect(),
-	);
 	fs::write(
 		directory.path().join("config.toml"),
 		format!(
@@ -249,7 +279,7 @@ fn failed_commands_replay_the_complete_colored_stdout_and_stderr() -> Result<()>
 }
 
 #[test]
-fn verbose_mode_prints_the_description_and_full_output_without_a_viewport() -> Result<()> {
+fn verbose_mode_prints_full_output_without_a_viewport_or_the_set_description() -> Result<()> {
 	let mut session = TerminalSession::start(
 		"for n in 1 2 3 4 5 6 7 8; do printf 'output %s\\n' \"$n\"; done\nprintf 'Ready? '\nread answer",
 		true,
@@ -263,7 +293,7 @@ fn verbose_mode_prints_the_description_and_full_output_without_a_viewport() -> R
 	assert_eq!(session.wait()?, 0);
 	let output = session.text();
 	let visible = session.parser.screen().contents();
-	assert!(output.contains("Runner test description"));
+	assert!(!output.contains("Runner test description"));
 	assert_eq!(output.matches("./command.sh").count(), 1);
 	assert!(!output.contains("\x1b[2K"));
 	assert!(!output.contains("\x1b[?7l"));
@@ -325,6 +355,97 @@ fn verbose_silent_or_unterminated_output_has_no_completion_marks() -> Result<()>
 		session.verify_no_completion_marks();
 		session.verify_restored_input();
 	}
+	Ok(())
+}
+
+#[test]
+fn verbose_step_descriptions_are_grey_multiline_text_beneath_each_command() -> Result<()> {
+	let mut session = TerminalSession::start_with_described_steps(
+		"printf 'Output from %s\\n' \"$1\"",
+		&[
+			(
+				"./command.sh first",
+				"Explain the first step.\r\nRead its output.",
+			),
+			("./command.sh second", "Explain the second step."),
+		],
+		true,
+	)?;
+	assert_eq!(session.wait()?, 0);
+	let visible = session.parser.screen().contents();
+	assert!(!session.text().contains("Runner test description"));
+	assert!(visible.contains(
+		"❯ ./command.sh first\n  Explain the first step.\n  Read its output.\nOutput from first"
+	));
+	assert!(
+		visible.contains("❯ ./command.sh second\n  Explain the second step.\nOutput from second")
+	);
+	for description in [
+		"Explain the first step.",
+		"Read its output.",
+		"Explain the second step.",
+	] {
+		let row = session
+			.parser
+			.screen()
+			.rows(0, 120)
+			.position(|row| row.contains(description))
+			.context("missing description row")?;
+		assert_eq!(
+			session
+				.parser
+				.screen()
+				.cell(u16::try_from(row)?, 2)
+				.unwrap()
+				.fgcolor(),
+			vt100::Color::Idx(245)
+		);
+	}
+	assert_eq!(session.text().matches("./command.sh first").count(), 1);
+	assert_eq!(session.text().matches("./command.sh second").count(), 1);
+	assert!(!session.text().contains("\x1b[2K"));
+	session.verify_no_completion_marks();
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn compact_mode_runs_described_steps_without_displaying_their_descriptions() -> Result<()> {
+	let mut session = TerminalSession::start_with_described_steps(
+		"printf 'Ready? '\nread answer\nprintf 'Temporary output\\n'",
+		&[(
+			"./command.sh",
+			"Only display this description in verbose mode.",
+		)],
+		false,
+	)?;
+	session.read_until("Ready?")?;
+	assert!(!session.text().contains("Only display this description"));
+	session.send(b"yes\n")?;
+	assert_eq!(session.wait()?, 0);
+	assert_eq!(session.parser.screen().contents(), "❯ ./command.sh ✓");
+	assert!(!session.text().contains("Only display this description"));
+	session.verify_status_colors(true)?;
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn verbose_step_descriptions_cannot_clear_terminal_output() -> Result<()> {
+	let mut session = TerminalSession::start_with_described_steps(
+		"printf 'Output remains visible\\n'",
+		&[("./command.sh", "Keep the header \x1b[2Jvisible.")],
+		true,
+	)?;
+	assert_eq!(session.wait()?, 0);
+	let visible = session.parser.screen().contents();
+	assert!(!visible.contains("Runner test description"));
+	assert!(visible.contains("❯ ./command.sh"));
+	assert!(visible.contains("  Keep the header \\u{1b}[2Jvisible."));
+	assert!(visible.contains("Output remains visible"));
+	assert!(!session.text().contains("\x1b[2J"));
+	session.verify_no_completion_marks();
+	session.verify_restored_input();
 	Ok(())
 }
 

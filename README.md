@@ -49,9 +49,8 @@ exit status. Linux uses its standard configuration directory and `xdg-open`.
 ```sh
 rcm                         # List command sets, or perform first-run setup
 rcm list                    # List command sets and descriptions
-rcm run hello               # Run a command set
-rcm run hello --verbose     # Show its description and all output
 rcm run brew-update         # Refresh, upgrade, and clean up Homebrew
+rcm run brew-update -v      # Show step descriptions and all output
 rcm config                  # Open the configuration for editing
 rcm config --path           # Print its path without creating or opening it
 rcm --config ./rcm.toml list # Use a different configuration file
@@ -75,14 +74,13 @@ stop_on_error = true
 scroll_lines = 5
 # working_dir = "/absolute/path/to/project"
 
-[commands.hello]
-description = "Say hello"
-steps = ['printf "Hello from rcm!\n"']
-
 [commands.inspect]
 description = "Inspect a project"
 working_dir = "/absolute/path/to/project"
-steps = ['pwd', 'ls -la']
+steps = [
+  { command = 'pwd', description = 'Show the working directory.' },
+  { command = 'ls -la', description = 'List all files and their details.' },
+]
 ```
 
 | Field | Behavior |
@@ -92,7 +90,9 @@ steps = ['pwd', 'ls -la']
 | `settings.scroll_lines` | Number of rows in the live output window; defaults to `5` and must be greater than zero. The window fits within the terminal height. |
 | `settings.working_dir` | Optional default working directory; otherwise the invocation directory is inherited. |
 | `commands.NAME.description` | Optional description displayed by `rcm list`. |
-| `commands.NAME.steps` | Required, nonempty array of shell command strings, executed in order. |
+| `commands.NAME.steps` | Required, nonempty array of objects with `command` and `description` fields, executed in order. |
+| `commands.NAME.steps[].command` | Required, nonempty shell command string. |
+| `commands.NAME.steps[].description` | Required, nonempty explanation for a described step, displayed beneath its command with `--verbose`. Supports multiline TOML strings. |
 | `commands.NAME.working_dir` | Optional override of the global working directory. |
 
 The example and first-run configuration include `brew-update`, matching the
@@ -101,6 +101,12 @@ SwiftAutomation command: `brew update`, `brew upgrade --greedy --no-ask`, then
 step fails. Homebrew must be installed and available on `PATH`. See the
 [Homebrew command reference](https://docs.brew.sh/Manpage) for the upgrade and
 cleanup options.
+
+Existing string steps such as `steps = ['pwd', 'ls']` remain supported and have
+no per-step description. Described and string steps can be mixed. The example
+and first-run template give every step a description, including the Homebrew
+explanations from SwiftAutomation. Existing configuration files are preserved;
+add these fields to your file to display descriptions for your own steps.
 
 Relative working directories are resolved from the directory where you invoke
 `rcm`. Working directory paths are used literally; use an absolute path instead
@@ -126,8 +132,9 @@ input, including hidden password prompts that read from `/dev/tty`. Input and
 terminal size changes are forwarded to the child. Ctrl-C interrupts the command
 and Ctrl-D sends end of input; terminal input settings are restored afterward.
 
-Use `--verbose` (or `-v`) to print the command set's description and stream all
-output directly, with no scrolling or clearing. Full-screen terminal applications
+Use `--verbose` (or `-v`) to show each step's description in grey directly beneath
+its command and stream all output with no scrolling or clearing. The overall
+command set description is shown by `rcm list`. Full-screen terminal applications
 should use verbose mode. When stdout is redirected to a file or pipe, command
 output streams normally without the scrolling window; stdin and stderr are
 inherited directly. In terminal mode, stdout and stderr share the captured

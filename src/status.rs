@@ -16,15 +16,39 @@ pub(crate) struct CommandStatus {
 }
 
 impl CommandStatus {
-	pub(crate) fn start(command: &str, terminal: bool, compact: bool) -> io::Result<Self> {
+	pub(crate) fn start(
+		command: &str,
+		description: &str,
+		terminal: bool,
+		compact: bool,
+	) -> io::Result<Self> {
 		let status = Self {
 			command: sanitize(command),
 			terminal,
 			compact,
 			finished: false,
 		};
-		status.write(&status.line(None))?;
+		let mut header = status.line(None);
+		if !compact {
+			header.push_str(&status.description_lines(description));
+		}
+		status.write(&header)?;
 		Ok(status)
+	}
+
+	fn description_lines(&self, description: &str) -> String {
+		description
+			.lines()
+			.map(|line| {
+				let text = sanitize(line);
+				let newline = self.newline();
+				if self.terminal {
+					format!("{GRAY}  {text}{RESET}{newline}")
+				} else {
+					format!("  {text}{newline}")
+				}
+			})
+			.collect()
 	}
 
 	pub(crate) fn finish(&mut self, success: bool) -> io::Result<()> {
