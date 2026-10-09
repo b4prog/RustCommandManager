@@ -116,6 +116,11 @@ cleared when the step finishes. If a step fails, its complete stdout and stderr
 are printed after clearing the window. Output is captured in a temporary file,
 so large transcripts do not need to remain in memory.
 
+Each command starts with a grey `❯` followed by the command in purple. When the
+command finishes, a green `✓` or red `✗` is added to its status line. Compact mode
+updates that line in place; verbose mode prints a completed status line after
+the full output. Redirected status messages are plain text on stderr.
+
 Commands run in a pseudo-terminal, preserving terminal colors and interactive
 input, including hidden password prompts that read from `/dev/tty`. Input and
 terminal size changes are forwarded to the child. Ctrl-C interrupts the command

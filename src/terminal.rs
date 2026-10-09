@@ -9,6 +9,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
 use filedescriptor::{FileDescriptor, POLLIN, poll, pollfd};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+use crate::status::CommandStatus;
 use crate::viewport::Viewport;
 
 pub(crate) fn execute(
@@ -18,6 +19,7 @@ pub(crate) fn execute(
 	verbose: bool,
 	lines: u16,
 ) -> Result<i32> {
+	let mut progress = CommandStatus::start(step, true, !verbose)?;
 	let mut session = Session::spawn(shell, step, directory)?;
 	let _input_mode = InputMode::enter()?;
 	let mut output = CommandOutput::new(!verbose, session.size, lines)?;
@@ -27,7 +29,10 @@ pub(crate) fn execute(
 			.wait()
 			.context("could not wait for the command")
 	});
-	output.finish(result.as_ref().map_or(true, |status| !status.success()))?;
+	output.finish(
+		result.as_ref().map_or(true, |status| !status.success()),
+		&mut progress,
+	)?;
 	let status = result?;
 	Ok(i32::try_from(status.exit_code()).unwrap_or(1))
 }
@@ -306,11 +311,12 @@ impl CommandOutput {
 		Ok(())
 	}
 
-	fn finish(&mut self, failed: bool) -> Result<()> {
-		let mut stdout = io::stdout().lock();
+	fn finish(&mut self, failed: bool, progress: &mut CommandStatus) -> Result<()> {
 		if let Some(viewport) = &mut self.viewport {
-			viewport.clear(&mut stdout)?;
+			viewport.clear(&mut io::stdout().lock())?;
 		}
+		progress.finish(!failed)?;
+		let mut stdout = io::stdout().lock();
 		if failed {
 			self.replay(&mut stdout)?;
 		}

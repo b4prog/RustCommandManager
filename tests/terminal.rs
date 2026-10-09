@@ -24,7 +24,11 @@ struct TerminalSession {
 
 impl TerminalSession {
 	fn start(script: &str, verbose: bool) -> Result<Self> {
-		let directory = terminal_fixture(script)?;
+		Self::start_with_step(script, "./command.sh", verbose)
+	}
+
+	fn start_with_step(script: &str, step: &str, verbose: bool) -> Result<Self> {
+		let directory = terminal_fixture(script, step)?;
 		let pair = native_pty_system().openpty(PtySize {
 			rows: 40,
 			cols: 120,
@@ -119,6 +123,30 @@ impl TerminalSession {
 			self.initial_attributes
 		);
 	}
+
+	fn verify_status_colors(&self, success: bool) -> Result<()> {
+		let symbol = if success { "✓" } else { "✗" };
+		let row = self
+			.parser
+			.screen()
+			.rows(0, 120)
+			.position(|row| row.contains(&format!("❯ ./command.sh {symbol}")))
+			.context("missing completed command status")?;
+		let row = u16::try_from(row)?;
+		assert_eq!(
+			self.parser.screen().cell(row, 0).unwrap().fgcolor(),
+			vt100::Color::Idx(245)
+		);
+		assert_eq!(
+			self.parser.screen().cell(row, 2).unwrap().fgcolor(),
+			vt100::Color::Idx(129)
+		);
+		assert_eq!(
+			self.parser.screen().cell(row, 15).unwrap().fgcolor(),
+			vt100::Color::Idx(if success { 34 } else { 196 })
+		);
+		Ok(())
+	}
 }
 
 impl Drop for TerminalSession {
@@ -128,16 +156,17 @@ impl Drop for TerminalSession {
 	}
 }
 
-fn terminal_fixture(script: &str) -> Result<TempDir> {
+fn terminal_fixture(script: &str, step: &str) -> Result<TempDir> {
 	let directory = tempdir()?;
 	let executable = directory.path().join("command.sh");
 	fs::write(&executable, format!("#!/bin/sh\n{script}\n"))?;
 	fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
 	let working_dir = toml::Value::String(directory.path().display().to_string());
+	let step = toml::Value::String(step.to_owned());
 	fs::write(
 		directory.path().join("config.toml"),
 		format!(
-			"[settings]\nscroll_lines = 3\n[commands.sample]\ndescription = 'Runner test description'\nworking_dir = {working_dir}\nsteps = ['./command.sh']\n"
+			"[settings]\nscroll_lines = 3\n[commands.sample]\ndescription = 'Runner test description'\nworking_dir = {working_dir}\nsteps = [{step}]\n"
 		),
 	)?;
 	Ok(directory)
@@ -151,6 +180,9 @@ fn successful_output_scrolls_in_a_few_lines_and_clears_at_exit() -> Result<()> {
 	)?;
 	session.read_until("Ready?")?;
 	let visible = session.parser.screen().contents();
+	assert!(visible.contains("❯ ./command.sh"));
+	assert!(!visible.contains("✓"));
+	assert!(!visible.contains("✗"));
 	assert!(visible.contains("line six"));
 	assert!(!visible.contains("old line"));
 	assert!(!visible.contains("line two"));
@@ -174,7 +206,9 @@ fn successful_output_scrolls_in_a_few_lines_and_clears_at_exit() -> Result<()> {
 	let final_output = session.parser.screen().contents();
 	assert!(!final_output.contains("line six"));
 	assert!(!final_output.contains("Ready?"));
-	assert!(final_output.contains("[sample 1/1] ./command.sh"));
+	assert!(final_output.contains("❯ ./command.sh ✓"));
+	assert!(!final_output.contains("[sample"));
+	session.verify_status_colors(true)?;
 	session.verify_restored_input();
 	Ok(())
 }
@@ -194,6 +228,7 @@ fn failed_commands_replay_the_complete_colored_stdout_and_stderr() -> Result<()>
 	}
 	assert!(session.text().contains("\x1b[32mfirst stdout\x1b[0m"));
 	assert!(session.text().contains("\x1b[31mlast stderr\x1b[0m"));
+	session.verify_status_colors(false)?;
 	session.verify_restored_input();
 	Ok(())
 }
@@ -212,6 +247,7 @@ fn verbose_mode_prints_the_description_and_full_output_without_a_viewport() -> R
 	for number in 1..=8 {
 		assert!(output.contains(&format!("output {number}")));
 	}
+	session.verify_status_colors(true)?;
 	session.verify_restored_input();
 	Ok(())
 }
@@ -298,6 +334,46 @@ fn pasted_input_is_forwarded_without_stalling_on_buffered_bytes() -> Result<()> 
 	session.send(&vec![b'z'; 8192])?;
 	assert_eq!(session.wait()?, 0);
 	assert!(session.text().contains("8192"));
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn a_silent_command_finishes_with_a_green_check_on_its_header() -> Result<()> {
+	let mut session = TerminalSession::start("exit 0", false)?;
+	assert_eq!(session.wait()?, 0);
+	assert_eq!(session.parser.screen().contents(), "❯ ./command.sh ✓");
+	session.verify_status_colors(true)?;
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn wrapped_command_headers_are_updated_without_duplicate_lines() -> Result<()> {
+	let step = format!("./command.sh {}", "long-argument".repeat(24));
+	let mut session = TerminalSession::start_with_step("printf 'Temporary output\\n'", &step, false)?;
+	assert_eq!(session.wait()?, 0);
+	let visible = session.parser.screen().contents().replace('\n', "");
+	assert_eq!(visible, format!("❯ {step} ✓"));
+	assert!(
+		!session
+			.parser
+			.screen()
+			.contents()
+			.contains("Temporary output")
+	);
+	session.verify_restored_input();
+	Ok(())
+}
+
+#[test]
+fn command_newlines_are_displayed_without_breaking_the_status_header() -> Result<()> {
+	let mut session = TerminalSession::start_with_step("exit 0", "./command.sh\ntrue", false)?;
+	assert_eq!(session.wait()?, 0);
+	assert_eq!(
+		session.parser.screen().contents(),
+		"❯ ./command.sh\\ntrue ✓"
+	);
 	session.verify_restored_input();
 	Ok(())
 }

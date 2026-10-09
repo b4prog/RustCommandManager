@@ -155,6 +155,10 @@ fn run_executes_a_named_set_and_inherits_output() {
 	let output = cli(&path).args(["run", "sample"]).output().unwrap();
 	assert!(output.status.success());
 	assert_eq!(String::from_utf8(output.stdout).unwrap(), "firstsecond");
+	let status = String::from_utf8(output.stderr).unwrap();
+	assert!(status.contains("❯ printf first ✓"));
+	assert!(status.contains("❯ printf second ✓"));
+	assert!(!status.contains("\x1b"));
 }
 
 #[test]
@@ -284,6 +288,9 @@ fn run_propagates_the_failing_command_exit_code() {
 	let output = cli(&path).args(["run", "fail"]).output().unwrap();
 	assert_eq!(output.status.code(), Some(23));
 	assert!(output.stdout.is_empty());
+	let status = String::from_utf8(output.stderr).unwrap();
+	assert!(status.contains("❯ exit 23 ✗"));
+	assert!(!status.contains("should-not-run"));
 }
 
 #[test]

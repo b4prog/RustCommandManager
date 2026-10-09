@@ -5,6 +5,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 
 use crate::config::Config;
+use crate::status::CommandStatus;
 
 /// Run a named command set, returning zero or its first failing step's exit code.
 pub fn run_set(config: &Config, name: &str) -> Result<i32> {
@@ -25,7 +26,6 @@ pub fn run_set_with_options(config: &Config, name: &str, verbose: bool) -> Resul
 		eprintln!("{}", command.description);
 	}
 	for (index, step) in command.steps.iter().enumerate() {
-		eprintln!("[{name} {}/{}] {step}", index + 1, command.steps.len());
 		let code = execute_step(
 			&config.settings.shell,
 			step,
@@ -62,13 +62,16 @@ fn execute_step(
 }
 
 fn run_inherited(shell: &str, step: &str, working_dir: Option<&Path>) -> Result<i32> {
+	let mut progress = CommandStatus::start(step, false, false)?;
 	let mut command = Command::new(shell);
 	command.arg("-c").arg(step);
 	if let Some(directory) = working_dir {
 		command.current_dir(directory);
 	}
-	let status = command
+	let result = command
 		.status()
-		.with_context(|| format!("could not start shell {shell:?}"))?;
+		.with_context(|| format!("could not start shell {shell:?}"));
+	progress.finish(result.as_ref().is_ok_and(|status| status.success()))?;
+	let status = result?;
 	Ok(status.code().unwrap_or(1))
 }
